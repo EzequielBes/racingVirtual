@@ -1,0 +1,9 @@
+PyQt6
+pyqtgraph
+numpy
+pandas
+scipy
+matplotlib
+pyttsx3
+salsa20
+# ollama # Comentado pois a instalação é via script externo (curl), conforme README
