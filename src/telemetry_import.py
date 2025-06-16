@@ -127,53 +127,7 @@ class TelemetryImporter:
         raise ValueError(f"Não foi possível detectar o formato do arquivo: {file_path}")
 
 
-    def _import_acc_telemetry(self, file_path: str) -> Dict[str, Any]:
-        """
-        Importa telemetria do Assetto Corsa Competizione (Placeholder).
-        Esta função precisa ser implementada com base no formato real dos dados do ACC.
-        Pode envolver leitura de memória compartilhada ou arquivos binários específicos.
-        """
-        print(f"Aviso: A importação de telemetria ACC (arquivo: {file_path}) ainda não está implementada.")
-        # Implementação futura aqui
-        telemetry_data = {
-            'metadata': {
-                'simulator': 'Assetto Corsa Competizione',
-                'track': 'Desconhecido',
-                'car': 'Desconhecido',
-                'driver': 'Desconhecido',
-                'date': datetime.now().isoformat(),
-                'lap_count': 0,
-                'source_file': file_path
-            },
-            'laps': []
-        }
-        # Exemplo: Se ACC gerar arquivos MoTeC .ld, redirecionar
-        # if file_path.endswith('.ld'):
-        #    return self._import_motec_telemetry(file_path)
-        return telemetry_data
-        # raise NotImplementedError("Importação de telemetria ACC ainda não implementada.")
-
-    def _import_lmu_telemetry(self, file_path: str) -> Dict[str, Any]:
-        """
-        Importa telemetria do Le Mans Ultimate (Placeholder).
-        Esta função precisa ser implementada com base no formato real dos dados do LMU.
-        """
-        print(f"Aviso: A importação de telemetria LMU (arquivo: {file_path}) ainda não está implementada.")
-        # Implementação futura aqui
-        telemetry_data = {
-            'metadata': {
-                'simulator': 'Le Mans Ultimate',
-                'track': 'Desconhecido',
-                'car': 'Desconhecido',
-                'driver': 'Desconhecido',
-                'date': datetime.now().isoformat(),
-                'lap_count': 0,
-                'source_file': file_path
-            },
-            'laps': []
-        }
-        return telemetry_data
-        # raise NotImplementedError("Importação de telemetria LMU ainda não implementada.")
+"))
 
     def _import_motec_telemetry(self, file_path: str) -> Dict[str, Any]:
         """
