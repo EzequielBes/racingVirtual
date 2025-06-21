@@ -1,804 +1,911 @@
 """
-Widget de visualização de telemetria para o Race Telemetry Analyzer.
-Exibe gráficos detalhados e análise de telemetria.
+Widget de telemetria moderno e funcional com layout clean e minimalista.
+Exibe gráficos interativos, métricas em tempo real e análise detalhada.
 """
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QComboBox, QSplitter, QFrame, QGroupBox, QGridLayout,
-    QScrollArea, QTabWidget, QTableWidget, QTableWidgetItem,
-    QHeaderView
+    QTabWidget, QFrame, QScrollArea, QSplitter, QGroupBox,
+    QGridLayout, QTableWidget, QTableWidgetItem, QHeaderView,
+    QTextEdit, QComboBox, QSlider, QProgressBar, QCheckBox,
+    QSpinBox, QDoubleSpinBox, QListWidget, QListWidgetItem,
+    QSizePolicy, QSpacerItem
 )
-from PyQt6.QtGui import QIcon, QFont, QColor, QPalette, QPainter, QPen
-from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot, QSize, QRectF
-from typing import Dict, List, Any, Optional
-
+from PyQt6.QtGui import QIcon, QFont, QColor, QPalette, QPixmap, QPainter, QPen
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QSize, QRectF
+import pyqtgraph as pg
 import numpy as np
-import matplotlib
-matplotlib.use('Qt5Agg')
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
-import matplotlib.pyplot as plt
+import pandas as pd
+from typing import Dict, List, Any, Optional
+import logging
 
-from .track_view import TrackViewWidget
+logger = logging.getLogger(__name__)
 
+class ModernTelemetryGraph(pg.PlotWidget):
+    """Widget de gráfico moderno para telemetria."""
+    
+    def __init__(self, title: str = "", parent=None):
+        super().__init__(parent)
+        self.setBackground('#FFFFFF')
+        self.setTitle(title, color="#2C3E50", size="16pt")
+        self.showGrid(x=True, y=True, alpha=0.2)
+        self.setLabel('left', 'Valor', color="#2C3E50", size="12pt")
+        self.setLabel('bottom', 'Tempo (s)', color="#2C3E50", size="12pt")
+        
+        # Configurações modernas
+        self.getAxis('left').setTextPen('#2C3E50')
+        self.getAxis('bottom').setTextPen('#2C3E50')
+        self.getAxis('left').setPen('#E9ECEF')
+        self.getAxis('bottom').setPen('#E9ECEF')
+        
+        # Remove bordas desnecessárias
+        self.setMouseEnabled(x=True, y=True)
+        self.setMenuEnabled(False)
+        
+        # Define range do eixo Y para 0-100%
+        self.setYRange(0, 100)
+        
+        # Adiciona legendas
+        self.addLegend(offset=(10, 10))
 
-class TelemetryChart(FigureCanvas):
-    """Widget para exibir gráficos de telemetria."""
-    
-    def __init__(self, parent=None, width=5, height=4, dpi=100):
-        """
-        Inicializa o widget de gráfico.
-        
-        Args:
-            parent: Widget pai
-            width: Largura da figura em polegadas
-            height: Altura da figura em polegadas
-            dpi: Resolução da figura
-        """
-        self.fig = Figure(figsize=(width, height), dpi=dpi)
-        self.axes = self.fig.add_subplot(111)
-        
-        super().__init__(self.fig)
-        self.setParent(parent)
-        
-        # Configuração do gráfico
-        self.fig.tight_layout()
-        self.fig.patch.set_alpha(0.0)
-        self.axes.patch.set_alpha(0.0)
-        
-        # Dados
-        self.x_data = []
-        self.y_data = []
-        self.line = None
-    
-    def plot_data(self, x_data: List[float], y_data: List[float], 
-                 label: str = "", color: str = "blue", clear: bool = True):
-        """
-        Plota dados no gráfico.
-        
-        Args:
-            x_data: Dados do eixo X
-            y_data: Dados do eixo Y
-            label: Rótulo da série
-            color: Cor da linha
-            clear: Se True, limpa o gráfico antes de plotar
-        """
-        if clear:
-            self.axes.clear()
-        
-        self.x_data = x_data
-        self.y_data = y_data
-        
-        self.line, = self.axes.plot(x_data, y_data, color=color, label=label)
-        
-        if label:
-            self.axes.legend()
-        
-        self.axes.grid(True, linestyle='--', alpha=0.7)
-        self.draw()
-    
-    def add_series(self, x_data: List[float], y_data: List[float], 
-                  label: str = "", color: str = "red"):
-        """
-        Adiciona uma série de dados ao gráfico existente.
-        
-        Args:
-            x_data: Dados do eixo X
-            y_data: Dados do eixo Y
-            label: Rótulo da série
-            color: Cor da linha
-        """
-        self.plot_data(x_data, y_data, label, color, clear=False)
-    
-    def set_labels(self, x_label: str, y_label: str, title: str = ""):
-        """
-        Define os rótulos dos eixos e o título do gráfico.
-        
-        Args:
-            x_label: Rótulo do eixo X
-            y_label: Rótulo do eixo Y
-            title: Título do gráfico
-        """
-        self.axes.set_xlabel(x_label)
-        self.axes.set_ylabel(y_label)
-        if title:
-            self.axes.set_title(title)
-        self.draw()
-    
-    def clear(self):
-        """Limpa o gráfico."""
-        self.axes.clear()
-        self.x_data = []
-        self.y_data = []
-        self.line = None
-        self.draw()
-
-
-class LapInfoPanel(QFrame):
-    """Painel para exibir informações detalhadas de uma volta."""
+class ModernTrackMap(pg.PlotWidget):
+    """Widget para exibir o mapa de traçado moderno."""
     
     def __init__(self, parent=None):
-        """
-        Inicializa o painel de informações de volta.
-        
-        Args:
-            parent: Widget pai
-        """
         super().__init__(parent)
+        self.setBackground('#FFFFFF')
+        self.setTitle("Mapa da Pista", color="#2C3E50", size="16pt")
+        self.setLabel('left', 'Latitude / Y', color="#2C3E50", size="12pt")
+        self.setLabel('bottom', 'Longitude / X', color="#2C3E50", size="12pt")
         
-        # Configuração do frame
-        self.setFrameShape(QFrame.Shape.StyledPanel)
-        self.setFrameShadow(QFrame.Shadow.Raised)
+        # Configurações modernas
+        self.getAxis('left').setTextPen('#2C3E50')
+        self.getAxis('bottom').setTextPen('#2C3E50')
+        self.getAxis('left').setPen('#E9ECEF')
+        self.getAxis('bottom').setPen('#E9ECEF')
         
-        # Layout
+        # Remove grid para melhor visualização do traçado
+        self.showGrid(x=False, y=False)
+        
+        # Adiciona legendas
+        self.addLegend(offset=(10, 10))
+
+class MetricCard(QFrame):
+    """Card moderno para exibir métricas."""
+    
+    def __init__(self, title: str, value: str = "0", unit: str = "", color: str = "#3498DB", parent=None):
+        super().__init__(parent)
+        self.setObjectName("metric-card")
+        self.setFixedSize(200, 120)
+        
         layout = QVBoxLayout(self)
+        layout.setSpacing(8)
+        layout.setContentsMargins(16, 16, 16, 16)
         
         # Título
-        title = QLabel("Informações da Volta")
-        title.setObjectName("section-title")
-        layout.addWidget(title)
+        title_label = QLabel(title)
+        title_label.setObjectName("metric-title")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # Valor
+        self.value_label = QLabel(value)
+        self.value_label.setObjectName("metric-value")
+        self.value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # Unidade
+        unit_label = QLabel(unit)
+        unit_label.setObjectName("metric-unit")
+        unit_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        layout.addWidget(title_label)
+        layout.addWidget(self.value_label)
+        layout.addWidget(unit_label)
+        
+        # Aplica cor de fundo
+        self.setStyleSheet(f"""
+            QFrame#metric-card {{
+                background-color: {color}15;
+                border: 2px solid {color}30;
+                border-radius: 16px;
+                padding: 16px;
+            }}
+            
+            QFrame#metric-card:hover {{
+                background-color: {color}25;
+                border-color: {color}50;
+            }}
+            
+            QLabel#metric-title {{
+                color: #2C3E50;
+                font-size: 14px;
+                font-weight: 600;
+                background-color: transparent;
+                border: none;
+            }}
+            
+            QLabel#metric-value {{
+                color: {color};
+                font-size: 24px;
+                font-weight: 700;
+                background-color: transparent;
+                border: none;
+            }}
+            
+            QLabel#metric-unit {{
+                color: #7F8C8D;
+                font-size: 12px;
+                font-weight: 500;
+                background-color: transparent;
+                border: none;
+            }}
+        """)
+    
+    def update_value(self, value: str):
+        """Atualiza o valor da métrica."""
+        self.value_label.setText(value)
+
+class ModernTelemetryWidget(QWidget):
+    """Widget principal de telemetria moderno e funcional."""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Telemetria Avançada")
+        self.setMinimumSize(1600, 1000)
+        
+        # Configura o layout principal
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setSpacing(20)
+        self.main_layout.setContentsMargins(24, 24, 24, 24)
+        
+        # Configura o estilo moderno
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #F8F9FA;
+                color: #2C3E50;
+                font-family: 'Segoe UI', 'Arial', sans-serif;
+            }
+            
+            QFrame#header {
+                background-color: #FFFFFF;
+                border: 2px solid #E9ECEF;
+                border-radius: 20px;
+                padding: 20px;
+            }
+            
+            QFrame#metrics-section {
+                background-color: #FFFFFF;
+                border: 2px solid #E9ECEF;
+                border-radius: 20px;
+                padding: 20px;
+            }
+            
+            QFrame#graphs-section {
+                background-color: #FFFFFF;
+                border: 2px solid #E9ECEF;
+                border-radius: 20px;
+                padding: 20px;
+            }
+            
+            QFrame#analysis-section {
+                background-color: #FFFFFF;
+                border: 2px solid #E9ECEF;
+                border-radius: 20px;
+                padding: 20px;
+            }
+            
+            QLabel#title {
+                font-size: 28px;
+                font-weight: 700;
+                color: #2C3E50;
+                background-color: transparent;
+                border: none;
+                padding: 8px;
+            }
+            
+            QLabel#subtitle {
+                font-size: 16px;
+                font-weight: 500;
+                color: #7F8C8D;
+                background-color: transparent;
+                border: none;
+                padding: 4px;
+            }
+            
+            QPushButton {
+                background-color: #3498DB;
+                color: white;
+                border: none;
+                border-radius: 12px;
+                padding: 12px 24px;
+                font-size: 14px;
+                font-weight: 600;
+                min-width: 120px;
+            }
+            
+            QPushButton:hover {
+                background-color: #2980B9;
+            }
+            
+            QPushButton:pressed {
+                background-color: #21618C;
+            }
+            
+            QPushButton:disabled {
+                background-color: #BDC3C7;
+                color: #7F8C8D;
+            }
+            
+            QTabWidget::pane {
+                border: 2px solid #E9ECEF;
+                border-radius: 16px;
+                background-color: #FFFFFF;
+            }
+            
+            QTabBar::tab {
+                background-color: #F8F9FA;
+                color: #2C3E50;
+                padding: 12px 24px;
+                margin-right: 4px;
+                border-top-left-radius: 12px;
+                border-top-right-radius: 12px;
+                font-weight: 600;
+            }
+            
+            QTabBar::tab:selected {
+                background-color: #3498DB;
+                color: white;
+            }
+            
+            QTabBar::tab:hover {
+                background-color: #2980B9;
+                color: white;
+            }
+        """)
+        
+        self._setup_header()
+        self._setup_metrics()
+        self._setup_graphs()
+        self._setup_analysis()
+        
+        # Dados de telemetria
+        self.telemetry_data = None
+        self.current_lap = 0
+        
+        logger.info("ModernTelemetryWidget inicializado com sucesso")
+        
+    def _setup_header(self):
+        """Configura o cabeçalho moderno."""
+        header_frame = QFrame()
+        header_frame.setObjectName("header")
+        
+        header_layout = QHBoxLayout(header_frame)
+        header_layout.setSpacing(20)
+        
+        # Título e subtítulo
+        title_layout = QVBoxLayout()
+        title_label = QLabel("📊 Análise de Telemetria Avançada")
+        title_label.setObjectName("title")
+        
+        subtitle_label = QLabel("Visualização em tempo real e análise detalhada")
+        subtitle_label.setObjectName("subtitle")
+        
+        title_layout.addWidget(title_label)
+        title_layout.addWidget(subtitle_label)
+        
+        # Status
+        self.status_label = QLabel("Pronto para análise")
+        self.status_label.setObjectName("subtitle")
+        
+        # Botões de controle
+        self.play_button = QPushButton("▶️ Reproduzir")
+        self.play_button.clicked.connect(self.play_telemetry)
+        
+        self.pause_button = QPushButton("⏸️ Pausar")
+        self.pause_button.clicked.connect(self.pause_telemetry)
+        self.pause_button.setEnabled(False)
+        
+        self.stop_button = QPushButton("⏹️ Parar")
+        self.stop_button.clicked.connect(self.stop_telemetry)
+        self.stop_button.setEnabled(False)
+        
+        # Adiciona widgets ao layout
+        header_layout.addLayout(title_layout)
+        header_layout.addStretch()
+        header_layout.addWidget(self.status_label)
+        header_layout.addWidget(self.play_button)
+        header_layout.addWidget(self.pause_button)
+        header_layout.addWidget(self.stop_button)
+        
+        self.main_layout.addWidget(header_frame)
+
+    def _setup_metrics(self):
+        """Configura a seção de métricas modernas."""
+        metrics_frame = QFrame()
+        metrics_frame.setObjectName("metrics-section")
+        
+        metrics_layout = QVBoxLayout(metrics_frame)
+        
+        # Título da seção
+        section_title = QLabel("📈 Métricas em Tempo Real")
+        section_title.setObjectName("title")
+        metrics_layout.addWidget(section_title)
         
         # Grid de métricas
-        metrics_grid = QGridLayout()
+        metrics_grid = QHBoxLayout()
+        metrics_grid.setSpacing(16)
         
-        # Tempo da volta
-        self.lap_time_label = QLabel("00:00.000")
-        self.lap_time_label.setObjectName("metric-value")
-        metrics_grid.addWidget(QLabel("Tempo:"), 0, 0)
-        metrics_grid.addWidget(self.lap_time_label, 0, 1)
+        # Cria cards de métricas
+        self.speed_card = MetricCard("Velocidade", "0.0", "km/h", "#E74C3C")
+        self.rpm_card = MetricCard("RPM", "0", "rpm", "#F39C12")
+        self.gear_card = MetricCard("Marcha", "N", "", "#3498DB")
+        self.best_lap_card = MetricCard("Melhor Volta", "0.000", "s", "#27AE60")
+        self.current_lap_card = MetricCard("Volta Atual", "0.000", "s", "#9B59B6")
+        self.throttle_card = MetricCard("Acelerador", "0", "%", "#E67E22")
+        self.brake_card = MetricCard("Freio", "0", "%", "#C0392B")
+        self.clutch_card = MetricCard("Embreagem", "0", "%", "#8E44AD")
         
-        # Setores
-        self.sector1_label = QLabel("00:00.000")
-        self.sector1_label.setObjectName("metric-value")
-        metrics_grid.addWidget(QLabel("Setor 1:"), 1, 0)
-        metrics_grid.addWidget(self.sector1_label, 1, 1)
+        # Adiciona cards ao grid
+        metrics_grid.addWidget(self.speed_card)
+        metrics_grid.addWidget(self.rpm_card)
+        metrics_grid.addWidget(self.gear_card)
+        metrics_grid.addWidget(self.best_lap_card)
+        metrics_grid.addWidget(self.current_lap_card)
+        metrics_grid.addWidget(self.throttle_card)
+        metrics_grid.addWidget(self.brake_card)
+        metrics_grid.addWidget(self.clutch_card)
         
-        self.sector2_label = QLabel("00:00.000")
-        self.sector2_label.setObjectName("metric-value")
-        metrics_grid.addWidget(QLabel("Setor 2:"), 2, 0)
-        metrics_grid.addWidget(self.sector2_label, 2, 1)
-        
-        self.sector3_label = QLabel("00:00.000")
-        self.sector3_label.setObjectName("metric-value")
-        metrics_grid.addWidget(QLabel("Setor 3:"), 3, 0)
-        metrics_grid.addWidget(self.sector3_label, 3, 1)
-        
-        # Velocidade máxima
-        self.max_speed_label = QLabel("0 km/h")
-        self.max_speed_label.setObjectName("metric-value")
-        metrics_grid.addWidget(QLabel("Vel. Máxima:"), 4, 0)
-        metrics_grid.addWidget(self.max_speed_label, 4, 1)
-        
-        # Velocidade média
-        self.avg_speed_label = QLabel("0 km/h")
-        self.avg_speed_label.setObjectName("metric-value")
-        metrics_grid.addWidget(QLabel("Vel. Média:"), 5, 0)
-        metrics_grid.addWidget(self.avg_speed_label, 5, 1)
-        
-        # RPM máximo
-        self.max_rpm_label = QLabel("0")
-        self.max_rpm_label.setObjectName("metric-value")
-        metrics_grid.addWidget(QLabel("RPM Máximo:"), 6, 0)
-        metrics_grid.addWidget(self.max_rpm_label, 6, 1)
-        
-        layout.addLayout(metrics_grid)
-        layout.addStretch()
-    
-    def update_lap_info(self, lap_data: Dict[str, Any]):
-        """
-        Atualiza as informações da volta.
-        
-        Args:
-            lap_data: Dicionário com dados da volta
-        """
-        if not lap_data:
-            return
-        
-        # Tempo da volta
-        lap_time = lap_data.get("lap_time", 0)
-        self.lap_time_label.setText(self._format_time(lap_time))
-        
-        # Setores
-        sectors = lap_data.get("sectors", [])
-        if len(sectors) >= 1:
-            self.sector1_label.setText(self._format_time(sectors[0].get("time", 0)))
-        if len(sectors) >= 2:
-            self.sector2_label.setText(self._format_time(sectors[1].get("time", 0)))
-        if len(sectors) >= 3:
-            self.sector3_label.setText(self._format_time(sectors[2].get("time", 0)))
-        
-        # Velocidade máxima e média
-        data_points = lap_data.get("data_points", [])
-        if data_points:
-            speeds = [p.get("speed", 0) for p in data_points]
-            max_speed = max(speeds) if speeds else 0
-            avg_speed = sum(speeds) / len(speeds) if speeds else 0
-            
-            self.max_speed_label.setText(f"{max_speed:.1f} km/h")
-            self.avg_speed_label.setText(f"{avg_speed:.1f} km/h")
-        
-        # RPM máximo
-        rpms = [p.get("rpm", 0) for p in data_points if "rpm" in p]
-        max_rpm = max(rpms) if rpms else 0
-        self.max_rpm_label.setText(f"{max_rpm:.0f}")
-    
-    def _format_time(self, time_seconds: float) -> str:
-        """
-        Formata um tempo em segundos para o formato MM:SS.mmm.
-        
-        Args:
-            time_seconds: Tempo em segundos
-            
-        Returns:
-            String formatada
-        """
-        if time_seconds <= 0:
-            return "00:00.000"
-        
-        minutes = int(time_seconds // 60)
-        seconds = int(time_seconds % 60)
-        milliseconds = int((time_seconds % 1) * 1000)
-        
-        return f"{minutes:02d}:{seconds:02d}.{milliseconds:03d}"
+        metrics_layout.addLayout(metrics_grid)
+        self.main_layout.addWidget(metrics_frame)
 
+    def _setup_graphs(self):
+        """Configura os gráficos modernos."""
+        graphs_frame = QFrame()
+        graphs_frame.setObjectName("graphs-section")
+        
+        graphs_layout = QVBoxLayout(graphs_frame)
+        
+        # Título da seção
+        section_title = QLabel("📊 Gráficos de Telemetria")
+        section_title.setObjectName("title")
+        graphs_layout.addWidget(section_title)
+        
+        # Configura cores dos gráficos
+        self.graph_colors = {
+            'throttle': '#E74C3C',      # Vermelho vibrante
+            'brake': '#3498DB',         # Azul vibrante  
+            'clutch': '#F39C12',        # Laranja vibrante
+            'speed': '#27AE60',         # Verde vibrante
+            'rpm': '#9B59B6',           # Roxo vibrante
+            'actual_line': '#E74C3C',   # Linha atual
+            'ideal_line': '#27AE60',    # Linha ideal
+            'current_line': '#3498DB'   # Linha atual
+        }
+        
+        # Cria os gráficos de controle
+        self.throttle_plot = ModernTelemetryGraph("Acelerador")
+        self.brake_plot = ModernTelemetryGraph("Freio")
+        self.clutch_plot = ModernTelemetryGraph("Embreagem")
+        self.speed_plot = ModernTelemetryGraph("Velocidade")
+        
+        # Layout horizontal para os gráficos de controle
+        control_graphs_layout = QHBoxLayout()
+        control_graphs_layout.addWidget(self.throttle_plot)
+        control_graphs_layout.addWidget(self.brake_plot)
+        control_graphs_layout.addWidget(self.clutch_plot)
+        control_graphs_layout.addWidget(self.speed_plot)
+        
+        # Cria o mapa da pista
+        self.track_map = ModernTrackMap()
+        
+        # Layout para gráficos e mapa
+        graphs_and_map_layout = QHBoxLayout()
+        graphs_and_map_layout.addLayout(control_graphs_layout, 3)  # 3/4 do espaço
+        graphs_and_map_layout.addWidget(self.track_map, 1)         # 1/4 do espaço
+        
+        graphs_layout.addLayout(graphs_and_map_layout)
+        self.main_layout.addWidget(graphs_frame)
 
-class LapSelector(QWidget):
-    """Widget para seleção de voltas."""
-    
-    lap_selected = pyqtSignal(dict)
-    
-    def __init__(self, parent=None):
-        """
-        Inicializa o seletor de voltas.
+    def _setup_analysis(self):
+        """Configura a seção de análise."""
+        analysis_frame = QFrame()
+        analysis_frame.setObjectName("analysis-section")
         
-        Args:
-            parent: Widget pai
-        """
-        super().__init__(parent)
+        analysis_layout = QVBoxLayout(analysis_frame)
         
-        # Layout
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        # Título da seção
+        section_title = QLabel("🔍 Análise Detalhada")
+        section_title.setObjectName("title")
+        analysis_layout.addWidget(section_title)
         
-        # Label
-        label = QLabel("Volta:")
-        layout.addWidget(label)
+        # Tabs para diferentes análises
+        self.analysis_tabs = QTabWidget()
         
-        # Combo box
-        self.lap_combo = QComboBox()
-        self.lap_combo.setMinimumWidth(150)
-        layout.addWidget(self.lap_combo)
+        # Tab de análise de setores
+        sectors_widget = QWidget()
+        sectors_layout = QVBoxLayout(sectors_widget)
+        self.sectors_text = QTextEdit()
+        self.sectors_text.setReadOnly(True)
+        self.sectors_text.setMaximumHeight(200)
+        sectors_layout.addWidget(self.sectors_text)
         
-        # Botões de navegação
-        self.prev_button = QPushButton("Anterior")
-        self.next_button = QPushButton("Próxima")
+        # Tab de análise de frenagem
+        braking_widget = QWidget()
+        braking_layout = QVBoxLayout(braking_widget)
+        self.braking_text = QTextEdit()
+        self.braking_text.setReadOnly(True)
+        self.braking_text.setMaximumHeight(200)
+        braking_layout.addWidget(self.braking_text)
         
-        layout.addWidget(self.prev_button)
-        layout.addWidget(self.next_button)
+        # Tab de análise de aceleração
+        acceleration_widget = QWidget()
+        acceleration_layout = QVBoxLayout(acceleration_widget)
+        self.acceleration_text = QTextEdit()
+        self.acceleration_text.setReadOnly(True)
+        self.acceleration_text.setMaximumHeight(200)
+        acceleration_layout.addWidget(self.acceleration_text)
         
-        layout.addStretch()
+        # Tab de análise de curvas
+        cornering_widget = QWidget()
+        cornering_layout = QVBoxLayout(cornering_widget)
+        self.cornering_text = QTextEdit()
+        self.cornering_text.setReadOnly(True)
+        self.cornering_text.setMaximumHeight(200)
+        cornering_layout.addWidget(self.cornering_text)
         
-        # Conecta sinais
-        self.lap_combo.currentIndexChanged.connect(self._on_lap_selected)
-        self.prev_button.clicked.connect(self._on_prev_clicked)
-        self.next_button.clicked.connect(self._on_next_clicked)
+        # Adiciona tabs
+        self.analysis_tabs.addTab(sectors_widget, "Setores")
+        self.analysis_tabs.addTab(braking_widget, "Frenagem")
+        self.analysis_tabs.addTab(acceleration_widget, "Aceleração")
+        self.analysis_tabs.addTab(cornering_widget, "Curvas")
         
-        # Dados
-        self.laps = []
-    
-    def set_laps(self, laps: List[Dict[str, Any]]):
-        """
-        Define a lista de voltas disponíveis.
-        
-        Args:
-            laps: Lista de dicionários com dados das voltas
-        """
-        self.laps = laps
-        
-        # Atualiza o combo box
-        self.lap_combo.clear()
-        
-        for lap in laps:
-            lap_num = lap.get("lap_number", 0)
-            lap_time = lap.get("lap_time", 0)
-            
-            minutes = int(lap_time // 60)
-            seconds = int(lap_time % 60)
-            milliseconds = int((lap_time % 1) * 1000)
-            
-            lap_text = f"Volta {lap_num} - {minutes:02d}:{seconds:02d}.{milliseconds:03d}"
-            self.lap_combo.addItem(lap_text, lap_num)
-        
-        # Seleciona a melhor volta
-        best_lap_idx = 0
-        best_time = float('inf')
-        
-        for i, lap in enumerate(laps):
-            if lap.get("lap_time", float('inf')) < best_time:
-                best_time = lap.get("lap_time", float('inf'))
-                best_lap_idx = i
-        
-        if self.lap_combo.count() > 0:
-            self.lap_combo.setCurrentIndex(best_lap_idx)
-    
-    def get_selected_lap(self) -> Optional[Dict[str, Any]]:
-        """
-        Retorna a volta selecionada.
-        
-        Returns:
-            Dicionário com dados da volta ou None se nenhuma volta estiver selecionada
-        """
-        current_index = self.lap_combo.currentIndex()
-        if current_index >= 0 and current_index < len(self.laps):
-            return self.laps[current_index]
-        return None
-    
-    def _on_lap_selected(self, index: int):
-        """
-        Manipula a seleção de uma volta no combo box.
-        
-        Args:
-            index: Índice da volta selecionada
-        """
-        if index >= 0 and index < len(self.laps):
-            self.lap_selected.emit(self.laps[index])
-    
-    def _on_prev_clicked(self):
-        """Manipula o clique no botão 'Anterior'."""
-        current_index = self.lap_combo.currentIndex()
-        if current_index > 0:
-            self.lap_combo.setCurrentIndex(current_index - 1)
-    
-    def _on_next_clicked(self):
-        """Manipula o clique no botão 'Próxima'."""
-        current_index = self.lap_combo.currentIndex()
-        if current_index < self.lap_combo.count() - 1:
-            self.lap_combo.setCurrentIndex(current_index + 1)
+        analysis_layout.addWidget(self.analysis_tabs)
+        self.main_layout.addWidget(analysis_frame)
 
+    def load_telemetry_data(self, data: Dict[str, Any]):
+        """Carrega dados de telemetria no widget."""
+        logger.info("Carregando dados de telemetria...")
+        
+        try:
+            self.telemetry_data = data
+            
+            if not data:
+                logger.warning("Dados de telemetria vazios")
+                self.status_label.setText("Nenhum dado carregado")
+                return
+            
+            # Converte dados do parser CSV para DataFrame se necessário
+            if 'data_points' in data and data['data_points'] and 'data' not in data:
+                import pandas as pd
+                df = pd.DataFrame(data['data_points'])
+                data['data'] = df
+                logger.info(f"Convertido {len(data['data_points'])} pontos de dados para DataFrame")
+            
+            # Atualiza a interface
+            self.update_ui()
+            
+            # Atualiza métricas se houver dados
+            if 'beacons' in data and data['beacons']:
+                self._update_metrics_from_beacons(data['beacons'])
+            elif 'data' in data and isinstance(data['data'], pd.DataFrame):
+                self._update_metrics_from_dataframe(data['data'])
+            elif 'data_points' in data and data['data_points']:
+                # Usa os data_points diretamente se não houver DataFrame
+                self._update_metrics_from_data_points(data['data_points'])
+            
+            # Atualiza gráficos
+            self.update_control_graphs()
+            
+            # Atualiza mapa
+            self.update_track_map()
+            
+            logger.info("Dados de telemetria carregados com sucesso")
+            
+        except Exception as e:
+            logger.error(f"Erro ao carregar dados de telemetria: {e}")
+            self.status_label.setText("Erro ao carregar dados")
 
-class TelemetryWidget(QWidget):
-    """Widget principal de visualização de telemetria."""
-    
-    def __init__(self, parent=None):
-        """
-        Inicializa o widget de telemetria.
-        
-        Args:
-            parent: Widget pai
-        """
-        super().__init__(parent)
-        
-        # Layout principal
-        layout = QVBoxLayout(self)
-        
-        # Seletor de voltas
-        self.lap_selector = LapSelector()
-        layout.addWidget(self.lap_selector)
-        
-        # Splitter principal
-        main_splitter = QSplitter(Qt.Orientation.Horizontal)
-        
-        # Painel esquerdo: Visualização da pista e informações da volta
-        left_panel = QWidget()
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        
-        # Visualização da pista
-        self.track_view = TrackViewWidget()
-        left_layout.addWidget(self.track_view, 2)  # 2 = stretch factor
-        
-        # Informações da volta
-        self.lap_info_panel = LapInfoPanel()
-        left_layout.addWidget(self.lap_info_panel, 1)  # 1 = stretch factor
-        
-        # Painel direito: Gráficos de telemetria
-        right_panel = QTabWidget()
-        
-        # Tab de velocidade
-        speed_tab = QWidget()
-        speed_layout = QVBoxLayout(speed_tab)
-        self.speed_chart = TelemetryChart()
-        speed_layout.addWidget(self.speed_chart)
-        right_panel.addTab(speed_tab, "Velocidade")
-        
-        # Tab de RPM
-        rpm_tab = QWidget()
-        rpm_layout = QVBoxLayout(rpm_tab)
-        self.rpm_chart = TelemetryChart()
-        rpm_layout.addWidget(self.rpm_chart)
-        right_panel.addTab(rpm_tab, "RPM")
-        
-        # Tab de pedais
-        pedals_tab = QWidget()
-        pedals_layout = QVBoxLayout(pedals_tab)
-        self.pedals_chart = TelemetryChart()
-        pedals_layout.addWidget(self.pedals_chart)
-        right_panel.addTab(pedals_tab, "Pedais")
-        
-        # Tab de análise
-        analysis_tab = QWidget()
-        analysis_layout = QVBoxLayout(analysis_tab)
-        
-        # Tabela de pontos-chave
-        self.key_points_table = QTableWidget()
-        self.key_points_table.setColumnCount(5)
-        self.key_points_table.setHorizontalHeaderLabels(["Tipo", "Distância", "Tempo", "Velocidade", "Ação"])
-        
-        # Ajusta o comportamento da tabela
-        self.key_points_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.key_points_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.key_points_table.setAlternatingRowColors(True)
-        
-        # Ajusta o tamanho das colunas
-        header = self.key_points_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
-        
-        analysis_layout.addWidget(QLabel("Pontos-Chave:"))
-        analysis_layout.addWidget(self.key_points_table)
-        
-        # Tabela de erros detectados
-        self.errors_table = QTableWidget()
-        self.errors_table.setColumnCount(4)
-        self.errors_table.setHorizontalHeaderLabels(["Tipo", "Severidade", "Posição", "Descrição"])
-        
-        # Ajusta o comportamento da tabela
-        self.errors_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.errors_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.errors_table.setAlternatingRowColors(True)
-        
-        # Ajusta o tamanho das colunas
-        header = self.errors_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        
-        analysis_layout.addWidget(QLabel("Erros Detectados:"))
-        analysis_layout.addWidget(self.errors_table)
-        
-        right_panel.addTab(analysis_tab, "Análise")
-        
-        # Adiciona painéis ao splitter
-        main_splitter.addWidget(left_panel)
-        main_splitter.addWidget(right_panel)
-        
-        # Define proporções iniciais
-        main_splitter.setSizes([400, 600])
-        
-        layout.addWidget(main_splitter)
-        
-        # Conecta sinais
-        self.lap_selector.lap_selected.connect(self._on_lap_selected)
-        
-        # Estado
-        self.current_telemetry = None
-        self.current_lap = None
-    
-    def load_telemetry(self, telemetry_data: Dict[str, Any]):
-        """
-        Carrega dados de telemetria.
-        
-        Args:
-            telemetry_data: Dicionário com dados de telemetria
-        """
-        self.current_telemetry = telemetry_data
-        
-        # Extrai as voltas
-        laps = telemetry_data.get("laps", [])
-        
-        # Atualiza o seletor de voltas
-        self.lap_selector.set_laps(laps)
-        
-        # Atualiza o traçado da pista
-        track_points = []
-        for lap in laps:
-            for point in lap.get("data_points", []):
-                if "position" in point:
-                    track_points.append(point["position"])
-        
-        if track_points:
-            self.track_view.set_track_points(track_points)
-    
-    def update_live_telemetry(self, telemetry_data: Dict[str, Any]):
-        """
-        Atualiza os dados de telemetria em tempo real.
-        
-        Args:
-            telemetry_data: Dicionário com dados de telemetria
-        """
-        # Atualiza o traçado da pista
-        if "current_position" in telemetry_data:
-            self.track_view.update_current_position(telemetry_data["current_position"])
-        
-        # Atualiza os gráficos
-        if "current_data" in telemetry_data:
-            current_data = telemetry_data["current_data"]
-            
-            # Adiciona ponto ao gráfico de velocidade
-            if "speed" in current_data and "time" in current_data:
-                self.speed_chart.add_series([current_data["time"]], [current_data["speed"]], "", "blue")
-            
-            # Adiciona ponto ao gráfico de RPM
-            if "rpm" in current_data and "time" in current_data:
-                self.rpm_chart.add_series([current_data["time"]], [current_data["rpm"]], "", "red")
-            
-            # Adiciona ponto ao gráfico de pedais
-            if ("throttle" in current_data or "brake" in current_data) and "time" in current_data:
-                throttle = current_data.get("throttle", 0)
-                brake = current_data.get("brake", 0)
-                
-                self.pedals_chart.add_series([current_data["time"]], [throttle * 100], "", "green")
-                self.pedals_chart.add_series([current_data["time"]], [brake * 100], "", "red")
-    
-    def get_current_telemetry(self) -> Dict[str, Any]:
-        """
-        Retorna os dados de telemetria atuais.
-        
-        Returns:
-            Dicionário com dados de telemetria
-        """
-        return self.current_telemetry or {}
-    
-    @pyqtSlot()
-    def refresh_data(self):
-        """Atualiza todos os dados do widget."""
-        # Recarrega a volta selecionada
-        selected_lap = self.lap_selector.get_selected_lap()
-        if selected_lap:
-            self._on_lap_selected(selected_lap)
-    
-    def _on_lap_selected(self, lap_data: Dict[str, Any]):
-        """
-        Manipula a seleção de uma volta.
-        
-        Args:
-            lap_data: Dicionário com dados da volta
-        """
-        self.current_lap = lap_data
-        
-        # Atualiza as informações da volta
-        self.lap_info_panel.update_lap_info(lap_data)
-        
-        # Atualiza o traçado da volta
-        lap_points = []
-        for point in lap_data.get("data_points", []):
-            if "position" in point:
-                lap_points.append(point["position"])
-        
-        if lap_points:
-            self.track_view.set_lap_points(lap_points)
-        
-        # Atualiza os gráficos
-        self._update_charts(lap_data)
-        
-        # Atualiza a análise
-        self._update_analysis(lap_data)
-    
-    def _update_charts(self, lap_data: Dict[str, Any]):
-        """
-        Atualiza os gráficos com os dados da volta.
-        
-        Args:
-            lap_data: Dicionário com dados da volta
-        """
-        data_points = lap_data.get("data_points", [])
+    def _update_metrics_from_data_points(self, data_points: List[Dict[str, Any]]):
+        """Atualiza métricas a partir dos data_points."""
         if not data_points:
             return
-        
-        # Extrai dados para os gráficos
-        times = [p.get("time", 0) for p in data_points]
-        distances = [p.get("distance", 0) for p in data_points]
-        speeds = [p.get("speed", 0) for p in data_points]
-        rpms = [p.get("rpm", 0) for p in data_points if "rpm" in p]
-        throttles = [p.get("throttle", 0) * 100 for p in data_points if "throttle" in p]  # Converte para porcentagem
-        brakes = [p.get("brake", 0) * 100 for p in data_points if "brake" in p]  # Converte para porcentagem
-        
-        # Gráfico de velocidade
-        if times and speeds:
-            self.speed_chart.plot_data(times, speeds, "Velocidade", "blue")
-            self.speed_chart.set_labels("Tempo (s)", "Velocidade (km/h)", "Velocidade x Tempo")
-        
-        # Gráfico de RPM
-        if times and rpms:
-            self.rpm_chart.plot_data(times, rpms, "RPM", "red")
-            self.rpm_chart.set_labels("Tempo (s)", "RPM", "RPM x Tempo")
-        
-        # Gráfico de pedais
-        if times and (throttles or brakes):
-            # Garante que os arrays tenham o mesmo tamanho
-            min_len = min(len(times), len(throttles), len(brakes))
-            times = times[:min_len]
-            throttles = throttles[:min_len]
-            brakes = brakes[:min_len]
             
-            self.pedals_chart.plot_data(times, throttles, "Acelerador", "green")
-            self.pedals_chart.add_series(times, brakes, "Freio", "red")
-            self.pedals_chart.set_labels("Tempo (s)", "Porcentagem (%)", "Uso dos Pedais")
-    
-    def _update_analysis(self, lap_data: Dict[str, Any]):
-        """
-        Atualiza as tabelas de análise com os dados da volta.
-        
-        Args:
-            lap_data: Dicionário com dados da volta
-        """
-        # Limpa as tabelas
-        self.key_points_table.setRowCount(0)
-        self.errors_table.setRowCount(0)
-        
-        # Pontos-chave
-        key_points = {}
-        
-        # Pontos de frenagem
-        braking_points = []
-        for i, point in enumerate(lap_data.get("data_points", [])):
-            if i > 0 and i < len(lap_data["data_points"]) - 1:
-                prev_point = lap_data["data_points"][i-1]
-                next_point = lap_data["data_points"][i+1]
-                
-                # Detecta início de frenagem forte
-                if "brake" in point and "brake" in prev_point:
-                    if point["brake"] > 0.5 and point["brake"] > prev_point["brake"]:
-                        braking_points.append({
-                            "type": "braking",
-                            "distance": point.get("distance", 0),
-                            "time": point.get("time", 0),
-                            "speed": point.get("speed", 0),
-                            "position": point.get("position", [0, 0])
-                        })
-        
-        key_points["braking"] = braking_points
-        
-        # Pontos de ápice
-        apex_points = []
-        for i, point in enumerate(lap_data.get("data_points", [])):
-            if i > 0 and i < len(lap_data["data_points"]) - 1:
-                prev_point = lap_data["data_points"][i-1]
-                next_point = lap_data["data_points"][i+1]
-                
-                # Detecta mínimo local de velocidade
-                if point["speed"] < prev_point["speed"] and point["speed"] <= next_point["speed"]:
-                    # Verifica se é uma redução significativa de velocidade
-                    if prev_point["speed"] - point["speed"] > 10:  # Pelo menos 10 unidades de velocidade
-                        apex_points.append({
-                            "type": "apex",
-                            "distance": point.get("distance", 0),
-                            "time": point.get("time", 0),
-                            "speed": point.get("speed", 0),
-                            "position": point.get("position", [0, 0])
-                        })
-        
-        key_points["apex"] = apex_points
-        
-        # Pontos de aceleração
-        acceleration_points = []
-        for i, point in enumerate(lap_data.get("data_points", [])):
-            if i > 0 and i < len(lap_data["data_points"]) - 1:
-                prev_point = lap_data["data_points"][i-1]
-                next_point = lap_data["data_points"][i+1]
-                
-                # Detecta início de aceleração forte após uma curva
-                if "throttle" in point and "throttle" in prev_point:
-                    if point["throttle"] > 0.7 and point["throttle"] > prev_point["throttle"]:
-                        # Verifica se havia frenagem antes
-                        if prev_point.get("brake", 0) > 0.1:
-                            acceleration_points.append({
-                                "type": "acceleration",
-                                "distance": point.get("distance", 0),
-                                "time": point.get("time", 0),
-                                "speed": point.get("speed", 0),
-                                "position": point.get("position", [0, 0])
-                            })
-        
-        key_points["acceleration"] = acceleration_points
-        
-        # Preenche a tabela de pontos-chave
-        all_points = []
-        all_points.extend(braking_points)
-        all_points.extend(apex_points)
-        all_points.extend(acceleration_points)
-        
-        # Ordena por distância
-        all_points.sort(key=lambda x: x["distance"])
-        
-        for i, point in enumerate(all_points):
-            row = self.key_points_table.rowCount()
-            self.key_points_table.insertRow(row)
+        try:
+            # Pega o último ponto para dados atuais
+            latest = data_points[-1]
             
-            # Tipo
-            type_text = {
-                "braking": "Frenagem",
-                "apex": "Ápice",
-                "acceleration": "Aceleração"
-            }.get(point["type"], point["type"])
+            # Atualiza valores
+            if 'SPEED' in latest:
+                speed = latest['SPEED']
+                self.speed_card.update_value(f"{speed:.1f}")
             
-            self.key_points_table.setItem(row, 0, QTableWidgetItem(type_text))
+            if 'RPMS' in latest:
+                rpm = latest['RPMS']
+                self.rpm_card.update_value(f"{rpm:.0f}")
             
-            # Distância
-            self.key_points_table.setItem(row, 1, QTableWidgetItem(f"{point['distance']:.1f} m"))
+            if 'GEAR' in latest:
+                gear = latest['GEAR']
+                gear_text = str(int(gear)) if gear > 0 else "N" if gear == 0 else "R"
+                self.gear_card.update_value(gear_text)
             
-            # Tempo
-            self.key_points_table.setItem(row, 2, QTableWidgetItem(f"{point['time']:.3f} s"))
+            if 'THROTTLE' in latest:
+                throttle = latest['THROTTLE']
+                self.throttle_card.update_value(f"{throttle:.0f}")
             
-            # Velocidade
-            self.key_points_table.setItem(row, 3, QTableWidgetItem(f"{point['speed']:.1f} km/h"))
+            if 'BRAKE' in latest:
+                brake = latest['BRAKE']
+                self.brake_card.update_value(f"{brake:.0f}")
             
-            # Botão de ação
-            view_button = QPushButton("Ver")
-            view_button.clicked.connect(lambda checked, p=point: self._show_point_on_track(p))
+            if 'CLUTCH' in latest:
+                clutch = latest['CLUTCH']
+                self.clutch_card.update_value(f"{clutch:.0f}")
             
-            self.key_points_table.setCellWidget(row, 4, view_button)
-        
-        # Erros detectados
-        # Aqui usaríamos o analisador de telemetria para detectar erros
-        # Por enquanto, vamos simular alguns erros
-        errors = []
-        
-        # Frenagem tardia
-        for point in braking_points:
-            # Encontra o próximo ápice
-            next_apex = None
-            for ap in apex_points:
-                if ap["distance"] > point["distance"]:
-                    next_apex = ap
+            # Calcula melhor tempo se houver dados de voltas
+            if hasattr(self, 'telemetry_data') and self.telemetry_data:
+                laps = self.telemetry_data.get('laps', [])
+                if laps:
+                    times = [lap.get('lap_time', 0) for lap in laps if lap.get('lap_time', 0) > 0]
+                    if times:
+                        best_time = min(times)
+                        self.best_lap_card.update_value(f"{best_time:.3f}")
+            
+            logger.info("Métricas atualizadas a partir dos data_points")
+            
+        except Exception as e:
+            logger.error(f"Erro ao atualizar métricas dos data_points: {e}")
+
+    def update_control_graphs(self):
+        """Atualiza os gráficos de controle com dados reais."""
+        if not self.telemetry_data:
+            return
+            
+        try:
+            # Limpa gráficos existentes
+            self.throttle_plot.clear()
+            self.brake_plot.clear()
+            self.clutch_plot.clear()
+            self.speed_plot.clear()
+            
+            # Obtém dados
+            df = None
+            if 'data' in self.telemetry_data and isinstance(self.telemetry_data['data'], pd.DataFrame):
+                df = self.telemetry_data['data']
+            elif 'data_points' in self.telemetry_data and self.telemetry_data['data_points']:
+                # Converte data_points para DataFrame
+                df = pd.DataFrame(self.telemetry_data['data_points'])
+            
+            if df is None or df.empty:
+                logger.warning("Nenhum dado disponível para gráficos")
+                return
+            
+            # Verifica se temos colunas de tempo
+            time_col = None
+            for col in ['Time', 'time', 'TIME']:
+                if col in df.columns:
+                    time_col = col
                     break
             
-            if next_apex:
-                # Verifica se a velocidade no ápice é muito baixa após a frenagem
-                speed_at_apex = next_apex["speed"]
-                speed_at_braking = point["speed"]
+            if time_col is None:
+                # Cria um array de tempo baseado no índice
+                time_data = np.arange(len(df))
+            else:
+                time_data = df[time_col].values
+            
+            # Plota throttle
+            throttle_col = None
+            for col in ['THROTTLE', 'Throttle', 'throttle']:
+                if col in df.columns:
+                    throttle_col = col
+                    break
+            
+            if throttle_col:
+                throttle_data = df[throttle_col].values
+                valid_mask = ~pd.isna(throttle_data)
+                if np.any(valid_mask):
+                    valid_time = time_data[valid_mask]
+                    valid_throttle = throttle_data[valid_mask]
+                    self.throttle_plot.plot(valid_time, valid_throttle, 
+                                          pen=pg.mkPen(color=self.graph_colors['throttle'], width=3),
+                                          name='Acelerador')
+            
+            # Plota brake
+            brake_col = None
+            for col in ['BRAKE', 'Brake', 'brake']:
+                if col in df.columns:
+                    brake_col = col
+                    break
+            
+            if brake_col:
+                brake_data = df[brake_col].values
+                valid_mask = ~pd.isna(brake_data)
+                if np.any(valid_mask):
+                    valid_time = time_data[valid_mask]
+                    valid_brake = brake_data[valid_mask]
+                    self.brake_plot.plot(valid_time, valid_brake, 
+                                       pen=pg.mkPen(color=self.graph_colors['brake'], width=3),
+                                       name='Freio')
+            
+            # Plota clutch
+            clutch_col = None
+            for col in ['CLUTCH', 'Clutch', 'clutch']:
+                if col in df.columns:
+                    clutch_col = col
+                    break
+            
+            if clutch_col:
+                clutch_data = df[clutch_col].values
+                valid_mask = ~pd.isna(clutch_data)
+                if np.any(valid_mask):
+                    valid_time = time_data[valid_mask]
+                    valid_clutch = clutch_data[valid_mask]
+                    self.clutch_plot.plot(valid_time, valid_clutch, 
+                                        pen=pg.mkPen(color=self.graph_colors['clutch'], width=3),
+                                        name='Embreagem')
+            
+            # Plota speed
+            speed_col = None
+            for col in ['SPEED', 'Speed', 'speed']:
+                if col in df.columns:
+                    speed_col = col
+                    break
+            
+            if speed_col:
+                speed_data = df[speed_col].values
+                valid_mask = ~pd.isna(speed_data)
+                if np.any(valid_mask):
+                    valid_time = time_data[valid_mask]
+                    valid_speed = speed_data[valid_mask]
+                    self.speed_plot.plot(valid_time, valid_speed, 
+                                       pen=pg.mkPen(color=self.graph_colors['speed'], width=3),
+                                       name='Velocidade')
+            
+            logger.info("Gráficos de controle atualizados")
+            
+        except Exception as e:
+            logger.error(f"Erro ao atualizar gráficos de controle: {e}")
+
+    def update_track_map(self):
+        """Atualiza o mapa da pista."""
+        if not self.telemetry_data:
+            return
+            
+        try:
+            # Limpa mapa existente
+            self.track_map.clear()
+            
+            # Obtém dados de posição
+            df = None
+            if 'data' in self.telemetry_data and isinstance(self.telemetry_data['data'], pd.DataFrame):
+                df = self.telemetry_data['data']
+            elif 'data_points' in self.telemetry_data and self.telemetry_data['data_points']:
+                df = pd.DataFrame(self.telemetry_data['data_points'])
+            
+            if df is None or df.empty:
+                return
+            
+            # Procura colunas de posição - para telemetria de simulação, pode usar G_LAT e G_LON
+            x_col = None
+            y_col = None
+            
+            # Primeiro tenta coordenadas GPS
+            for col in ['X', 'x', 'Longitude', 'longitude', 'G_LON']:
+                if col in df.columns:
+                    x_col = col
+                    break
+            
+            for col in ['Y', 'y', 'Latitude', 'latitude', 'G_LAT']:
+                if col in df.columns:
+                    y_col = col
+                    break
+            
+            if x_col and y_col:
+                x_data = df[x_col].values
+                y_data = df[y_col].values
                 
-                # Heurística: Se a velocidade no ápice for < 50% da velocidade na frenagem
-                if speed_at_apex < speed_at_braking * 0.5 and speed_at_braking > 100:
-                    errors.append({
-                        "type": "late_braking",
-                        "severity": "medium",
-                        "position": point["position"],
-                        "description": "Possível frenagem tardia ou excessiva, resultando em baixa velocidade no ápice"
-                    })
+                # Remove valores NaN
+                valid_mask = ~(np.isnan(x_data) | np.isnan(y_data))
+                if np.any(valid_mask):
+                    x_valid = x_data[valid_mask]
+                    y_valid = y_data[valid_mask]
+                    
+                    # Plota o traçado
+                    self.track_map.plot(x_valid, y_valid, 
+                                      pen=pg.mkPen(color=self.graph_colors['actual_line'], width=4),
+                                      name='Traçado Atual')
+                    
+                    logger.info("Mapa da pista atualizado")
+                
+        except Exception as e:
+            logger.error(f"Erro ao atualizar mapa da pista: {e}")
+
+    def update_ui(self):
+        """Atualiza a interface com os dados carregados."""
+        if not self.telemetry_data:
+            return
+            
+        try:
+            # Atualiza informações básicas
+            metadata = self.telemetry_data.get('metadata', {})
+            filename = metadata.get('filename', 'Arquivo desconhecido')
+            
+            # Atualiza status
+            self.status_label.setText(f"Arquivo carregado: {filename}")
+            
+            # Atualiza gráficos
+            self.update_control_graphs()
+            
+            # Atualiza mapa
+            self.update_track_map()
+            
+            # Atualiza análises
+            self.update_analysis()
+            
+            logger.info("UI atualizada com sucesso")
+            
+        except Exception as e:
+            logger.error(f"Erro ao atualizar UI: {e}")
+            self.status_label.setText("Erro ao atualizar interface")
         
-        # Preenche a tabela de erros
-        for error in errors:
-            row = self.errors_table.rowCount()
-            self.errors_table.insertRow(row)
+    def update_analysis(self):
+        """Atualiza as análises com dados reais."""
+        if not self.telemetry_data:
+            return
             
-            # Tipo
-            type_text = {
-                "late_braking": "Frenagem Tardia",
-                "early_acceleration": "Aceleração Prematura",
-                "traction_loss": "Perda de Tração",
-                "inconsistent_line": "Linha Inconsistente"
-            }.get(error["type"], error["type"])
+        try:
+            # Análise de setores (baseada em dados reais)
+            laps = self.telemetry_data.get('laps', [])
+            if laps:
+                total_laps = len(laps)
+                times = [lap.get('lap_time', 0) for lap in laps if lap.get('lap_time', 0) > 0]
+                if times:
+                    avg_time = sum(times) / len(times)
+                    best_time = min(times)
+                    worst_time = max(times)
+                    
+                    sectors_analysis = f"""
+                    📊 Análise de Setores:
+                    
+                    • Total de voltas: {total_laps}
+                    • Melhor volta: {best_time:.3f}s
+                    • Pior volta: {worst_time:.3f}s
+                    • Tempo médio: {avg_time:.3f}s
+                    • Consistência: {((best_time/avg_time)*100):.1f}%
+                    
+                    🎯 Foco: Melhorar consistência entre voltas
+                    """
+                else:
+                    sectors_analysis = "📊 Análise de Setores:\n\nNenhum tempo de volta válido encontrado."
+            else:
+                sectors_analysis = "📊 Análise de Setores:\n\nNenhuma volta identificada nos dados."
             
-            self.errors_table.setItem(row, 0, QTableWidgetItem(type_text))
+            self.sectors_text.setText(sectors_analysis)
             
-            # Severidade
-            severity_text = {
-                "low": "Baixa",
-                "medium": "Média",
-                "high": "Alta"
-            }.get(error["severity"], error["severity"])
+            # Análise de frenagem (baseada em dados reais)
+            df = None
+            if 'data' in self.telemetry_data and isinstance(self.telemetry_data['data'], pd.DataFrame):
+                df = self.telemetry_data['data']
+            elif 'data_points' in self.telemetry_data and self.telemetry_data['data_points']:
+                df = pd.DataFrame(self.telemetry_data['data_points'])
             
-            self.errors_table.setItem(row, 1, QTableWidgetItem(severity_text))
+            if df is not None and not df.empty:
+                brake_col = None
+                for col in ['BRAKE', 'Brake', 'brake']:
+                    if col in df.columns:
+                        brake_col = col
+                        break
+                
+                if brake_col:
+                    brake_data = df[brake_col].dropna()
+                    if not brake_data.empty:
+                        avg_brake = brake_data.mean()
+                        max_brake = brake_data.max()
+                        brake_usage = (brake_data > 10).sum() / len(brake_data) * 100
+                        
+                        braking_analysis = f"""
+                        🛑 Análise de Frenagem:
+                        
+                        • Frenagem média: {avg_brake:.1f}%
+                        • Frenagem máxima: {max_brake:.1f}%
+                        • Uso de freio: {brake_usage:.1f}% do tempo
+                        • Pontos de frenagem: {(brake_data > 50).sum()}
+                        
+                        💡 Dica: {'Reduzir frenagem excessiva' if avg_brake > 60 else 'Frenagem adequada'}
+                        """
+                    else:
+                        braking_analysis = "🛑 Análise de Frenagem:\n\nNenhum dado de frenagem válido."
+                else:
+                    braking_analysis = "🛑 Análise de Frenagem:\n\nDados de frenagem não encontrados."
+            else:
+                braking_analysis = "🛑 Análise de Frenagem:\n\nNenhum dado disponível."
             
-            # Posição
-            pos_text = f"({error['position'][0]:.1f}, {error['position'][1]:.1f})"
-            self.errors_table.setItem(row, 2, QTableWidgetItem(pos_text))
+            self.braking_text.setText(braking_analysis)
             
-            # Descrição
-            self.errors_table.setItem(row, 3, QTableWidgetItem(error["description"]))
+            # Análise de aceleração
+            if df is not None and not df.empty:
+                throttle_col = None
+                for col in ['THROTTLE', 'Throttle', 'throttle']:
+                    if col in df.columns:
+                        throttle_col = col
+                        break
+                
+                if throttle_col:
+                    throttle_data = df[throttle_col].dropna()
+                    if not throttle_data.empty:
+                        avg_throttle = throttle_data.mean()
+                        max_throttle = throttle_data.max()
+                        throttle_usage = (throttle_data > 10).sum() / len(throttle_data) * 100
+                        
+                        acceleration_analysis = f"""
+                        🚀 Análise de Aceleração:
+                        
+                        • Aceleração média: {avg_throttle:.1f}%
+                        • Aceleração máxima: {max_throttle:.1f}%
+                        • Uso do acelerador: {throttle_usage:.1f}% do tempo
+                        • Pontos de aceleração: {(throttle_data > 80).sum()}
+                        
+                        💡 Dica: {'Ser mais agressivo na saída das curvas' if avg_throttle < 50 else 'Aceleração adequada'}
+                        """
+                    else:
+                        acceleration_analysis = "🚀 Análise de Aceleração:\n\nNenhum dado de aceleração válido."
+                else:
+                    acceleration_analysis = "🚀 Análise de Aceleração:\n\nDados de aceleração não encontrados."
+            else:
+                acceleration_analysis = "🚀 Análise de Aceleração:\n\nNenhum dado disponível."
+            
+            self.acceleration_text.setText(acceleration_analysis)
+            
+            # Análise de curva
+            if df is not None and not df.empty:
+                speed_col = None
+                for col in ['SPEED', 'Speed', 'speed']:
+                    if col in df.columns:
+                        speed_col = col
+                        break
+                
+                if speed_col:
+                    speed_data = df[speed_col].dropna()
+                    if not speed_data.empty:
+                        avg_speed = speed_data.mean()
+                        max_speed = speed_data.max()
+                        min_speed = speed_data.min()
+                        
+                        cornering_analysis = f"""
+                        🏁 Análise de Curvas:
+                        
+                        • Velocidade média: {avg_speed:.1f} km/h
+                        • Velocidade máxima: {max_speed:.1f} km/h
+                        • Velocidade mínima: {min_speed:.1f} km/h
+                        • Variação de velocidade: {max_speed - min_speed:.1f} km/h
+                        
+                        💡 Dica: {'Melhorar linha de corrida' if (max_speed - min_speed) > 100 else 'Linha de corrida adequada'}
+                        """
+                    else:
+                        cornering_analysis = "🏁 Análise de Curvas:\n\nNenhum dado de velocidade válido."
+                else:
+                    cornering_analysis = "🏁 Análise de Curvas:\n\nDados de velocidade não encontrados."
+            else:
+                cornering_analysis = "🏁 Análise de Curvas:\n\nNenhum dado disponível."
+            
+            self.cornering_text.setText(cornering_analysis)
+            
+        except Exception as e:
+            logger.error(f"Erro ao atualizar análises: {e}")
     
-    def _show_point_on_track(self, point: Dict[str, Any]):
-        """
-        Destaca um ponto no traçado da pista.
-        
-        Args:
-            point: Dicionário com dados do ponto
-        """
-        if "position" in point:
-            self.track_view.highlight_point(point["position"])
+    def update_realtime_telemetry(self, data: Dict[str, Any]):
+        """Atualiza com dados de telemetria em tempo real."""
+        # Implementar quando necessário
+        pass
+
+    def play_telemetry(self):
+        """Implementa a lógica para reproduzir a telemetria."""
+        # Implementar quando necessário
+        pass
+
+    def pause_telemetry(self):
+        """Implementa a lógica para pausar a telemetria."""
+        # Implementar quando necessário
+        pass
+
+    def stop_telemetry(self):
+        """Implementa a lógica para parar a telemetria."""
+        # Implementar quando necessário
+        pass

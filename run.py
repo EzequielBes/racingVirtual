@@ -1,30 +1,80 @@
+#!/usr/bin/env python3
 """
-Script de execução simplificado para o Race Telemetry Analyzer.
-Este arquivo facilita a execução direta do aplicativo sem problemas de importação.
+Script principal para executar o Race Telemetry Analyzer.
+Inclui verificações de dependências e tratamento de erros melhorado.
 """
 
-import os
 import sys
+import os
+import subprocess
+import importlib
 
-# Adiciona o diretório atual ao path do Python
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, current_dir)
+def check_dependencies():
+    """Verifica se todas as dependências necessárias estão instaladas."""
+    required_packages = [
+        'PyQt6',
+        'pyqtgraph', 
+        'numpy',
+        'pandas',
+        'matplotlib',
+        'scipy'
+    ]
+    
+    missing_packages = []
+    
+    for package in required_packages:
+        try:
+            importlib.import_module(package)
+            print(f"✓ {package} - OK")
+        except ImportError:
+            missing_packages.append(package)
+            print(f"✗ {package} - FALTANDO")
+    
+    if missing_packages:
+        print(f"\nDependências faltando: {', '.join(missing_packages)}")
+        print("Instalando dependências faltantes...")
+        
+        try:
+            subprocess.check_call([
+                sys.executable, '-m', 'pip', 'install', 
+                '--user', *missing_packages
+            ])
+            print("Dependências instaladas com sucesso!")
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"Erro ao instalar dependências: {e}")
+            return False
+    
+    return True
 
-# Importa e executa o módulo principal
-try:
-    from src.main import main
+def main():
+    """Função principal."""
+    print("Race Telemetry Analyzer - Inicializando...")
+    print("=" * 50)
     
-    if __name__ == "__main__":
-        main()
-except ImportError as e:
-    print(f"Erro de importação: {e}")
-    print("\nVerifique se todas as dependências estão instaladas:")
-    print("pip install PyQt6 numpy matplotlib scipy pandas")
+    # Verifica dependências
+    if not check_dependencies():
+        print("Erro: Não foi possível instalar todas as dependências.")
+        sys.exit(1)
     
-    input("\nPressione Enter para sair...")
-    sys.exit(1)
-except Exception as e:
-    print(f"Erro ao iniciar o aplicativo: {e}")
+    print("\nIniciando aplicação...")
     
-    input("\nPressione Enter para sair...")
-    sys.exit(1)
+    try:
+        # Adiciona o diretório src ao path
+        src_path = os.path.join(os.path.dirname(__file__), 'src')
+        sys.path.insert(0, src_path)
+        
+        # Importa e executa o main
+        from main import main as run_app
+        run_app()
+        
+    except ImportError as e:
+        print(f"Erro de importação: {e}")
+        print("Verifique se todos os módulos estão presentes.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Erro inesperado: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

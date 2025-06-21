@@ -1,88 +1,325 @@
+"""
+Real-time telemetry analysis module for Race Telemetry Analyzer.
+Provides threaded analysis of telemetry data with feedback generation.
+"""
+
 import logging
 import time
-from typing import Dict, List, Any
-
-from PyQt6.QtCore import QObject, QThread, pyqtSignal, pyqtSlot
+from typing import Dict, Any, Optional, List
+from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
 logger = logging.getLogger(__name__)
-
-# --- Simple Rule Examples --- 
-# These would ideally be more complex and potentially loaded from config
-# For now, just check lap times against a threshold.
-LAP_TIME_THRESHOLD_SLOW = 115.0 # Example: 1:55.000
-LAP_TIME_THRESHOLD_FAST = 108.0 # Example: 1:48.000
 
 class RealTimeAnalyzerWorker(QObject):
     """Worker object to perform analysis in a separate thread."""
     finished = pyqtSignal()
     error = pyqtSignal(str)
-    feedback_detected = pyqtSignal(str) # Signal for feedback messages
-    progress_update = pyqtSignal(int, int) # Current step, total steps
+    feedback_detected = pyqtSignal(str)  # Signal for feedback messages
+    progress_update = pyqtSignal(int, int)  # Current step, total steps
+    analysis_results_ready = pyqtSignal(dict)  # Novo sinal para resultados da análise abrangente
 
     def __init__(self, telemetry_data: Dict[str, Any]):
         super().__init__()
         self.telemetry_data = telemetry_data
-        self._running = True
+        self._running = False
         self._paused = False
 
     def run(self):
-        """Processes the loaded telemetry data."""
-        logger.info("RealTimeAnalyzerWorker thread started.")
+        """Main analysis loop."""
         try:
-            beacons = self.telemetry_data.get("beacons", [])
-            if not beacons or len(beacons) < 2:
-                logger.warning("Not enough beacon data for lap time analysis.")
-                self.error.emit("Dados de beacon insuficientes para análise.")
-                self.finished.emit()
+            self._running = True
+            logger.info("🚀 RealTimeAnalyzerWorker iniciado!")
+            
+            # Log detalhado dos dados recebidos
+            logger.info("=== DADOS RECEBIDOS NO WORKER ===")
+            logger.info(f"Tipo de telemetry_data: {type(self.telemetry_data)}")
+            logger.info(f"Chaves: {list(self.telemetry_data.keys())}")
+            
+            # Get laps from telemetry data
+            laps = self.telemetry_data.get("laps", [])
+            logger.info(f"🏁 Voltas para análise: {len(laps)}")
+            
+            if not laps:
+                logger.error("❌ Nenhuma volta encontrada nos dados!")
+                self.error.emit("Nenhuma volta encontrada nos dados.")
                 return
-
-            total_laps = len(beacons) -1 # Number of full laps
-            self.progress_update.emit(0, total_laps)
-
-            for i in range(total_laps):
-                if not self._running: break
-                while self._paused:
-                    if not self._running: break
-                    time.sleep(0.1) # Sleep while paused
                 
-                start_beacon = beacons[i]
-                end_beacon = beacons[i+1]
-                lap_number = i + 1 # Laps are usually 1-indexed for users
-                
-                lap_time = end_beacon["time"] - start_beacon["time"]
-                lap_time_str = f"{lap_time:.3f}s"
-                logger.info(f"Analyzing Lap {lap_number}: Time = {lap_time_str}")
-
-                # --- Apply Simple Rules --- 
-                if lap_time > LAP_TIME_THRESHOLD_SLOW:
-                    feedback = f"Volta {lap_number} foi lenta ({lap_time_str}). Verifique os setores."
-                    logger.info(f"Feedback generated: {feedback}")
-                    self.feedback_detected.emit(feedback)
-                    time.sleep(0.5) # Add a small delay after feedback
+            total_laps = len(laps)
+            logger.info(f"📊 Analisando {total_laps} voltas...")
+            
+            # Log detalhes de cada volta
+            for i, lap in enumerate(laps):
+                logger.info(f"🏁 Volta {i+1}:")
+                logger.info(f"   Número da volta: {lap.get('lap_number', 'N/A')}")
+                logger.info(f"   Tempo da volta: {lap.get('lap_time', 'N/A')}")
+                data_points = lap.get("data_points", [])
+                if isinstance(data_points, list):
+                    logger.info(f"   Pontos de dados: {len(data_points)}")
+                else:
+                    logger.info(f"   Pontos de dados: {data_points}")
+                if data_points and isinstance(data_points, list) and len(data_points) > 0:
+                    logger.info(f"   Primeiro ponto: {data_points[0]}")
+                    logger.info(f"   Último ponto: {data_points[-1]}")
+            
+            # Analysis results storage
+            analysis_results = {
+                "laps_analyzed": 0,
+                "total_laps": total_laps,
+                "best_lap": None,
+                "worst_lap": None,
+                "average_lap_time": 0.0,
+                "consistency_score": 0.0,
+                "feedback_messages": [],
+                "lap_details": []
+            }
+            
+            lap_times = []
+            
+            for i, lap in enumerate(laps):
+                if not self._running:
+                    logger.info("⏹️ Análise interrompida pelo usuário")
+                    break
                     
-                elif lap_time < LAP_TIME_THRESHOLD_FAST:
-                    feedback = f"Volta {lap_number} excepcional! ({lap_time_str}). Ótimo ritmo!"
-                    logger.info(f"Feedback generated: {feedback}")
-                    self.feedback_detected.emit(feedback)
-                    time.sleep(0.5)
+                while self._paused:
+                    time.sleep(0.1)
+                    if not self._running:
+                        break
                 
-                # TODO: Add more rules based on other data (requires parsing .ld file)
-                # e.g., check speed at apex, throttle application, braking points
-
-                self.progress_update.emit(lap_number, total_laps)
-                time.sleep(1) # Simulate processing time or playback speed
-
+                lap_number = lap.get("lap_number", i + 1)
+                lap_time = lap.get("lap_time", 0)
+                
+                logger.info(f"🔍 Analisando volta {lap_number} (tempo: {lap_time:.2f}s)")
+                self.progress_update.emit(i + 1, total_laps)
+                
+                # Log detalhes da análise da volta
+                data_points = lap.get("data_points", [])
+                logger.info(f"   📊 Pontos de dados: {len(data_points)}")
+                
+                # Basic lap analysis
+                lap_analysis = self._analyze_lap(lap)
+                logger.info(f"   📈 Resultados da análise:")
+                logger.info(f"      Velocidade média: {lap_analysis.get('average_speed', 0):.2f}")
+                logger.info(f"      Velocidade máxima: {lap_analysis.get('max_speed', 0):.2f}")
+                logger.info(f"      Uso de throttle: {lap_analysis.get('throttle_usage', 0):.2f}%")
+                logger.info(f"      Uso de freio: {lap_analysis.get('brake_usage', 0):.2f}%")
+                
+                analysis_results["lap_details"].append(lap_analysis)
+                
+                if lap_time > 0:
+                    lap_times.append(lap_time)
+                    logger.info(f"   ⏱️ Tempo da volta adicionado: {lap_time:.2f}s")
+                    
+                    # Track best and worst laps
+                    if analysis_results["best_lap"] is None or lap_time < analysis_results["best_lap"]["time"]:
+                        analysis_results["best_lap"] = {"lap": lap_number, "time": lap_time}
+                        logger.info(f"   🏆 Nova melhor volta: {lap_time:.2f}s")
+                    if analysis_results["worst_lap"] is None or lap_time > analysis_results["worst_lap"]["time"]:
+                        analysis_results["worst_lap"] = {"lap": lap_number, "time": lap_time}
+                        logger.info(f"   🐌 Nova pior volta: {lap_time:.2f}s")
+                else:
+                    logger.warning(f"   ⚠️ Tempo da volta é 0 ou inválido")
+                
+                # Generate feedback for this lap
+                feedback = self._generate_lap_feedback(lap_analysis)
+                if feedback:
+                    logger.info(f"   💬 Feedback gerado: {feedback}")
+                    self.feedback_detected.emit(feedback)
+                    analysis_results["feedback_messages"].append(feedback)
+                
+                analysis_results["laps_analyzed"] += 1
+                logger.info(f"   ✅ Volta {lap_number} analisada com sucesso")
+                
+                # Small delay to prevent UI freezing
+                time.sleep(0.01)
+            
+            # Calculate overall statistics
+            logger.info("=== CÁLCULO DE ESTATÍSTICAS FINAIS ===")
+            if lap_times:
+                analysis_results["average_lap_time"] = sum(lap_times) / len(lap_times)
+                logger.info(f"📊 Tempo médio das voltas: {analysis_results['average_lap_time']:.2f}s")
+                
+                # Calculate consistency (lower standard deviation = more consistent)
+                if len(lap_times) > 1:
+                    import numpy as np
+                    std_dev = np.std(lap_times)
+                    mean_time = np.mean(lap_times)
+                    analysis_results["consistency_score"] = max(0, 100 - (std_dev / mean_time * 100))
+                    logger.info(f"📊 Desvio padrão: {std_dev:.2f}s")
+                    logger.info(f"📊 Consistência: {analysis_results['consistency_score']:.1f}%")
+            else:
+                logger.warning("⚠️ Nenhum tempo de volta válido encontrado")
+            
+            # Final feedback
+            final_feedback = self._generate_final_feedback(analysis_results)
+            if final_feedback:
+                logger.info(f"💬 Feedback final: {final_feedback}")
+                self.feedback_detected.emit(final_feedback)
+            
+            # Log resultados finais
+            logger.info("=== RESULTADOS FINAIS ===")
+            logger.info(f"📊 Voltas analisadas: {analysis_results['laps_analyzed']}")
+            logger.info(f"📊 Total de voltas: {analysis_results['total_laps']}")
+            if analysis_results['best_lap']:
+                logger.info(f"🏆 Melhor volta: {analysis_results['best_lap']['lap']} em {analysis_results['best_lap']['time']:.2f}s")
+            if analysis_results['worst_lap']:
+                logger.info(f"🐌 Pior volta: {analysis_results['worst_lap']['lap']} em {analysis_results['worst_lap']['time']:.2f}s")
+            logger.info(f"📊 Tempo médio: {analysis_results['average_lap_time']:.2f}s")
+            logger.info(f"📊 Consistência: {analysis_results['consistency_score']:.1f}%")
+            
+            # Emit comprehensive results
+            self.analysis_results_ready.emit(analysis_results)
+            
+            logger.info("✅ RealTimeAnalyzerWorker finalizado com sucesso!")
+            
         except Exception as e:
-            logger.error(f"Error during telemetry analysis: {e}", exc_info=True)
-            self.error.emit(f"Erro na análise: {e}")
+            logger.error(f"❌ Erro no RealTimeAnalyzerWorker: {e}", exc_info=True)
+            self.error.emit(f"Erro durante a análise: {str(e)}")
         finally:
-            logger.info("RealTimeAnalyzerWorker thread finished.")
+            self._running = False
             self.finished.emit()
+
+    def _analyze_lap(self, lap: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyzes a single lap and returns analysis results."""
+        logger.info(f"🔍 Iniciando análise detalhada da volta...")
+        
+        data_points = lap.get("data_points", [])
+        lap_time = lap.get("lap_time", 0)
+        
+        logger.info(f"   📊 Pontos de dados: {len(data_points)}")
+        logger.info(f"   ⏱️ Tempo da volta: {lap_time}")
+        
+        analysis = {
+            "lap_number": lap.get("lap_number", 0),
+            "lap_time": lap_time,
+            "data_points_count": len(data_points),
+            "average_speed": 0.0,
+            "max_speed": 0.0,
+            "min_speed": 999999.0,  # Valor alto em vez de float('inf')
+            "throttle_usage": 0.0,
+            "brake_usage": 0.0
+        }
+        
+        if not data_points:
+            logger.warning("   ⚠️ Nenhum ponto de dados encontrado!")
+            return analysis
+        
+        logger.info(f"   📈 Analisando {len(data_points)} pontos de dados...")
+        
+        speeds = []
+        throttle_values = []
+        brake_values = []
+        
+        # Log dos primeiros pontos para debug
+        for i, point in enumerate(data_points[:5]):  # Primeiros 5 pontos
+            logger.info(f"   📊 Ponto {i+1}: {point}")
+        
+        for i, point in enumerate(data_points):
+            # Tenta diferentes nomes de canais para velocidade
+            speed = point.get("SPEED", point.get("speed", 0))
+            if speed is not None:
+                try:
+                    speed_float = float(speed)
+                    speeds.append(speed_float)
+                    analysis["max_speed"] = max(analysis["max_speed"], speed_float)
+                    analysis["min_speed"] = min(analysis["min_speed"], speed_float)
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"   ⚠️ Erro ao converter velocidade: {speed} - {e}")
+            
+            # Tenta diferentes nomes de canais para acelerador
+            throttle = point.get("THROTTLE", point.get("throttle", 0))
+            if throttle is not None:
+                try:
+                    throttle_values.append(float(throttle))
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"   ⚠️ Erro ao converter throttle: {throttle} - {e}")
+            
+            # Tenta diferentes nomes de canais para freio
+            brake = point.get("BRAKE", point.get("brake", 0))
+            if brake is not None:
+                try:
+                    brake_values.append(float(brake))
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"   ⚠️ Erro ao converter brake: {brake} - {e}")
+        
+        logger.info(f"   📊 Valores encontrados:")
+        logger.info(f"      Velocidades válidas: {len(speeds)}")
+        logger.info(f"      Valores de throttle: {len(throttle_values)}")
+        logger.info(f"      Valores de brake: {len(brake_values)}")
+        
+        if speeds:
+            analysis["average_speed"] = sum(speeds) / len(speeds)
+            logger.info(f"      Velocidade média: {analysis['average_speed']:.2f}")
+            logger.info(f"      Velocidade máxima: {analysis['max_speed']:.2f}")
+            logger.info(f"      Velocidade mínima: {analysis['min_speed']:.2f}")
+        else:
+            logger.warning("   ⚠️ Nenhuma velocidade válida encontrada!")
+            
+        if throttle_values:
+            analysis["throttle_usage"] = sum(throttle_values) / len(throttle_values) * 100
+            logger.info(f"      Uso de throttle: {analysis['throttle_usage']:.2f}%")
+        else:
+            logger.warning("   ⚠️ Nenhum valor de throttle válido encontrado!")
+            
+        if brake_values:
+            analysis["brake_usage"] = sum(brake_values) / len(brake_values) * 100
+            logger.info(f"      Uso de brake: {analysis['brake_usage']:.2f}%")
+        else:
+            logger.warning("   ⚠️ Nenhum valor de brake válido encontrado!")
+        
+        # Corrige min_speed se não foi encontrado nenhum valor
+        if analysis["min_speed"] == 999999.0:
+            analysis["min_speed"] = 0.0
+            logger.info("   ⚠️ Velocidade mínima corrigida para 0.0")
+        
+        logger.info(f"   ✅ Análise da volta concluída!")
+        return analysis
+
+    def _generate_lap_feedback(self, lap_analysis: Dict[str, Any]) -> str:
+        """Generates feedback for a single lap."""
+        lap_number = lap_analysis["lap_number"]
+        lap_time = lap_analysis["lap_time"]
+        avg_speed = lap_analysis["average_speed"]
+        
+        feedback_parts = []
+        
+        if lap_time > 0:
+            feedback_parts.append(f"Volta {lap_number}: {lap_time:.2f} segundos")
+            
+            if avg_speed > 150:
+                feedback_parts.append("Boa velocidade média")
+            elif avg_speed < 100:
+                feedback_parts.append("Velocidade média baixa")
+        
+        return ". ".join(feedback_parts) if feedback_parts else ""
+
+    def _generate_final_feedback(self, analysis_results: Dict[str, Any]) -> str:
+        """Generates final feedback after analyzing all laps."""
+        total_laps = analysis_results["total_laps"]
+        analyzed_laps = analysis_results["laps_analyzed"]
+        best_lap = analysis_results["best_lap"]
+        worst_lap = analysis_results["worst_lap"]
+        consistency = analysis_results["consistency_score"]
+        
+        feedback_parts = []
+        
+        feedback_parts.append(f"Análise concluída: {analyzed_laps} voltas analisadas")
+        
+        if best_lap:
+            feedback_parts.append(f"Melhor volta: {best_lap['lap']} em {best_lap['time']:.2f}s")
+        
+        if consistency > 80:
+            feedback_parts.append("Excelente consistência")
+        elif consistency > 60:
+            feedback_parts.append("Boa consistência")
+        else:
+            feedback_parts.append("Consistência pode melhorar")
+        
+        return ". ".join(feedback_parts)
 
     def stop(self):
         logger.info("Stopping RealTimeAnalyzerWorker...")
         self._running = False
-        self._paused = False # Ensure it's not stuck paused
+        self._paused = False  # Ensure it's not stuck paused
 
     def pause(self):
         logger.info("Pausing RealTimeAnalyzerWorker...")
@@ -97,171 +334,191 @@ class RealTimeAnalyzer(QObject):
     analysis_error = pyqtSignal(str)
     analysis_feedback = pyqtSignal(str)
     analysis_progress = pyqtSignal(int, int)
-    analysis_finished = pyqtSignal()
+    analysis_finished = pyqtSignal(dict)  # Agora emite o dicionário de resultados
     analysis_started = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.thread: Optional[QThread] = None
-        self.worker: Optional[RealTimeAnalyzerWorker] = None
-        self.is_running = False
+        self.worker = None
+        self.thread = None
+        self._running = False
+        self._stop_requested = False
 
     def start_analysis(self, telemetry_data: Dict[str, Any]):
-        """Starts the analysis in a new thread."""
-        if self.is_running:
-            logger.warning("Analysis is already running.")
-            self.analysis_error.emit("Análise já em andamento.")
-            return
-            
-        if not telemetry_data or not telemetry_data.get("beacons"):
-             logger.error("No telemetry data provided or data is invalid.")
-             self.analysis_error.emit("Dados de telemetria inválidos ou ausentes.")
-             return
-
-        self.thread = QThread()
-        self.worker = RealTimeAnalyzerWorker(telemetry_data)
-        self.worker.moveToThread(self.thread)
-
-        # Connect worker signals
-        self.worker.finished.connect(self._on_analysis_finished)
-        self.worker.error.connect(self.analysis_error)
-        self.worker.feedback_detected.connect(self.analysis_feedback)
-        self.worker.progress_update.connect(self.analysis_progress)
+        """Inicia a análise de telemetria em uma thread separada."""
+        logger.info("=== INICIANDO ANÁLISE DE TELEMETRIA ===")
+        logger.info(f"Tipo de dados recebidos: {type(telemetry_data)}")
+        logger.info(f"Chaves disponíveis: {list(telemetry_data.keys()) if telemetry_data else 'Nenhuma'}")
         
-        # Connect thread signals
-        self.thread.started.connect(self.worker.run)
-        self.thread.finished.connect(self.worker.deleteLater)
-        self.thread.finished.connect(self.thread.deleteLater)
+        if not telemetry_data:
+            logger.error("❌ Dados de telemetria vazios!")
+            self.analysis_error.emit("Dados de telemetria inválidos ou ausentes.")
+            return
 
-        self.thread.start()
-        self.is_running = True
-        self.analysis_started.emit()
-        logger.info("RealTimeAnalyzer thread started.")
+        # Log detalhado dos dados
+        logger.info("=== DETALHES DOS DADOS ===")
+        for key, value in telemetry_data.items():
+            if isinstance(value, (list, dict)):
+                logger.info(f"📊 {key}: {type(value).__name__} com {len(value)} itens")
+                if isinstance(value, list) and len(value) > 0:
+                    logger.info(f"   Primeiro item: {value[0]}")
+                elif isinstance(value, dict) and len(value) > 0:
+                    first_key = list(value.keys())[0]
+                    logger.info(f"   Primeira chave: {first_key} = {value[first_key]}")
+            else:
+                logger.info(f"📊 {key}: {value}")
+
+        # Verifica se há laps
+        laps = telemetry_data.get("laps", [])
+        logger.info(f"🏁 Voltas encontradas: {len(laps)}")
+        
+        if not laps:
+            logger.warning("⚠️ Nenhuma volta encontrada nos dados!")
+            logger.info("Tentando encontrar dados alternativos...")
+            
+            # Tenta encontrar dados em outras estruturas
+            if "beacons" in telemetry_data:
+                beacons = telemetry_data["beacons"]
+                logger.info(f"📡 Beacons encontrados: {len(beacons)}")
+                if beacons:
+                    logger.info(f"   Primeiro beacon: {beacons[0]}")
+                    
+            if "data" in telemetry_data:
+                data = telemetry_data["data"]
+                logger.info(f"📈 Dados encontrados: {type(data)}")
+                if hasattr(data, 'shape'):
+                    logger.info(f"   Shape: {data.shape}")
+                if hasattr(data, 'columns'):
+                    logger.info(f"   Colunas: {list(data.columns)}")
+                    
+            # Cria uma volta artificial se não houver
+            logger.info("🔄 Criando volta artificial para análise...")
+            artificial_lap = {
+                "lap_number": 1,
+                "lap_time": 0.0,
+                "data_points": []
+            }
+            
+            # Adiciona dados dos beacons se disponível
+            if "beacons" in telemetry_data and telemetry_data["beacons"]:
+                artificial_lap["data_points"] = telemetry_data["beacons"]
+                logger.info(f"   Adicionados {len(telemetry_data['beacons'])} pontos de dados")
+                
+            # Adiciona dados do DataFrame se disponível
+            elif "data" in telemetry_data and hasattr(telemetry_data["data"], 'to_dict'):
+                df = telemetry_data["data"]
+                records = df.to_dict('records')
+                artificial_lap["data_points"] = records
+                logger.info(f"   Adicionados {len(records)} pontos de dados do DataFrame")
+                
+            laps = [artificial_lap]
+            telemetry_data["laps"] = laps
+            logger.info("✅ Volta artificial criada com sucesso!")
+
+        # Para qualquer análise anterior
+        self.stop_analysis()
+        
+        try:
+            # Cria o worker
+            self.worker = RealTimeAnalyzerWorker(telemetry_data)
+            
+            # Cria a thread
+            self.thread = QThread()
+            self.worker.moveToThread(self.thread)
+            
+            # Conecta sinais
+            self.thread.started.connect(self.worker.run)
+            self.worker.finished.connect(self.thread.quit)
+            self.worker.finished.connect(self.worker.deleteLater)
+            self.thread.finished.connect(self.thread.deleteLater)
+            
+            # Conecta sinais de feedback
+            self.worker.feedback_detected.connect(self.analysis_feedback)
+            self.worker.progress_update.connect(self.analysis_progress)
+            self.worker.error.connect(self.analysis_error)
+            self.worker.analysis_results_ready.connect(self.analysis_finished)
+            
+            # Conecta sinal de finalização
+            self.thread.finished.connect(self._on_analysis_finished)
+            
+            # Marca como rodando
+            self._running = True
+            self._stop_requested = False
+            
+            # Emite sinal de início
+            self.analysis_started.emit()
+            
+            # Inicia a thread
+            self.thread.start()
+            
+            logger.info("✅ RealTimeAnalyzer thread iniciada com sucesso!")
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao iniciar análise: {e}", exc_info=True)
+            self.analysis_error.emit(f"Erro ao iniciar análise: {str(e)}")
+            self._cleanup()
 
     def _on_analysis_finished(self):
+        """Callback quando a análise termina."""
         logger.info("Analysis finished signal received.")
-        self.is_running = False
-        if self.thread:
-            self.thread.quit()
-            # self.thread.wait(500) # Optional wait
-        self.analysis_finished.emit()
-        self.thread = None # Clean up
-        self.worker = None
+        self._running = False
+        self._cleanup()
+
+    def _cleanup(self):
+        """Limpa recursos da análise."""
+        try:
+            if hasattr(self, 'worker') and self.worker:
+                self.worker = None
+            if hasattr(self, 'thread') and self.thread:
+                self.thread = None
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")
 
     def stop_analysis(self):
-        """Requests the analysis thread to stop."""
-        if self.worker and self.is_running:
-            logger.info("Requesting RealTimeAnalyzer thread stop...")
-            self.worker.stop()
-        else:
-            logger.info("Analysis not running or worker not available.")
+        """Para a análise de telemetria."""
+        logger.info("Requesting RealTimeAnalyzer stop...")
+        self._running = False
+        self._stop_requested = True
+        
+        try:
+            # Para o worker thread
+            if hasattr(self, 'worker') and self.worker:
+                self.worker.stop()
             
-    def pause_analysis(self):
-        if self.worker and self.is_running:
-             self.worker.pause()
-             
-    def resume_analysis(self):
-         if self.worker and self.is_running:
-             self.worker.resume()
+            # Para a thread principal com timeout
+            if hasattr(self, 'thread') and self.thread and self.thread.isRunning():
+                self.thread.quit()
+                if not self.thread.wait(2000):  # Aguarda até 2 segundos
+                    logger.warning("RealTimeAnalyzer thread não terminou em tempo hábil")
+                    self.thread.terminate()
+                    self.thread.wait(1000)  # Aguarda mais um pouco
+            
+            self._cleanup()
+            
+        except Exception as e:
+            logger.error(f"Error stopping analysis: {e}")
+        
+        logger.info("RealTimeAnalyzer stopped.")
 
     def __del__(self):
-        # Ensure thread is stopped on deletion
-        self.stop_analysis()
+        """Destrutor para garantir limpeza adequada."""
+        try:
+            self.stop_analysis()
+        except:
+            pass  # Ignora erros no destrutor
 
-# Example Usage (for testing within this module)
-if __name__ == "__main__":
-    import sys
-    from PyQt6.QtWidgets import QApplication, QPushButton, QVBoxLayout, QWidget, QTextEdit, QProgressBar, QLabel
-
-    logging.basicConfig(level=logging.DEBUG)
-
-    # Dummy data similar to parsed LDX
-    dummy_data = {
-        "beacons": [
-            {"time": 0.1, "name": "0, id=99", "lap_index": 0},
-            {"time": 110.5, "name": "1, id=99", "lap_index": 1}, # Lap 1: 110.4s (OK)
-            {"time": 228.0, "name": "2, id=99", "lap_index": 2}, # Lap 2: 117.5s (Slow)
-            {"time": 335.2, "name": "3, id=99", "lap_index": 3}, # Lap 3: 107.2s (Fast)
-            {"time": 446.1, "name": "4, id=99", "lap_index": 4}  # Lap 4: 110.9s (OK)
-        ],
-        "details": {"Total Laps": 5, "Fastest Lap": 3, "Fastest Time": 107.2},
-        "metadata": {"format": "ldx_xml"}
-    }
-
-    app = QApplication(sys.argv)
-    window = QWidget()
-    layout = QVBoxLayout(window)
-    
-    log_view = QTextEdit()
-    log_view.setReadOnly(True)
-    progress_bar = QProgressBar()
-    start_button = QPushButton("Start Analysis")
-    pause_button = QPushButton("Pause Analysis")
-    resume_button = QPushButton("Resume Analysis")
-    stop_button = QPushButton("Stop Analysis")
-
-    layout.addWidget(QLabel("Analysis Log & Feedback:"))
-    layout.addWidget(log_view)
-    layout.addWidget(progress_bar)
-    layout.addWidget(start_button)
-    layout.addWidget(pause_button)
-    layout.addWidget(resume_button)
-    layout.addWidget(stop_button)
-
-    analyzer = RealTimeAnalyzer()
-    synthesizer = VoiceSynthesizer() # Also test voice output
-
-    def log_message(msg):
-        log_view.append(f"[ANALYSIS] {msg}")
-        synthesizer.speak(msg) # Speak the feedback
-
-    def log_error(msg):
-        log_view.append(f"[ERROR] {msg}")
-        
-    def update_progress(current, total):
-        log_view.append(f"[PROGRESS] Lap {current}/{total}")
-        progress_bar.setMaximum(total)
-        progress_bar.setValue(current)
-        
-    def on_finish():
-        log_view.append("[INFO] Analysis Finished.")
-        progress_bar.setValue(progress_bar.maximum())
-        start_button.setEnabled(True)
-        pause_button.setEnabled(False)
-        resume_button.setEnabled(False)
-        stop_button.setEnabled(False)
-        
-    def on_start():
-        log_view.append("[INFO] Analysis Started.")
-        start_button.setEnabled(False)
-        pause_button.setEnabled(True)
-        resume_button.setEnabled(False)
-        stop_button.setEnabled(True)
-        progress_bar.setValue(0)
-
-    analyzer.analysis_feedback.connect(log_message)
-    analyzer.analysis_error.connect(log_error)
-    analyzer.analysis_progress.connect(update_progress)
-    analyzer.analysis_finished.connect(on_finish)
-    analyzer.analysis_started.connect(on_start)
-
-    start_button.clicked.connect(lambda: analyzer.start_analysis(dummy_data))
-    stop_button.clicked.connect(analyzer.stop_analysis)
-    pause_button.clicked.connect(lambda: (analyzer.pause_analysis(), pause_button.setEnabled(False), resume_button.setEnabled(True)))
-    resume_button.clicked.connect(lambda: (analyzer.resume_analysis(), pause_button.setEnabled(True), resume_button.setEnabled(False)))
-
-    # Initial state
-    pause_button.setEnabled(False)
-    resume_button.setEnabled(False)
-    stop_button.setEnabled(False)
-
-    window.setWindowTitle("RealTime Analyzer Test")
-    window.setGeometry(100, 100, 500, 400)
-    window.show()
-
-    # Ensure threads stop when app quits
-    app.aboutToQuit.connect(analyzer.stop_analysis)
-    app.aboutToQuit.connect(synthesizer.stop)
-
-    sys.exit(app.exec())
-
+    def pause_analysis(self):
+        """Pausa a análise de telemetria."""
+        if hasattr(self, 'worker') and self.worker and self._running:
+            self.worker.pause()
+            logger.info("Análise pausada")
+        else:
+            logger.info("Análise não está rodando ou worker não disponível")
+              
+    def resume_analysis(self):
+        """Retoma a análise de telemetria."""
+        if hasattr(self, 'worker') and self.worker and self._running:
+            self.worker.resume()
+            logger.info("Análise retomada")
+        else:
+            logger.info("Análise não está rodando ou worker não disponível")

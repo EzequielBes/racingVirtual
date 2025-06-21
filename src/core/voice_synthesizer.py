@@ -117,23 +117,38 @@ class VoiceSynthesizer(QObject):
             self.error_occurred.emit("TTS thread not running.")
 
     def stop(self):
-        """Stops the worker thread gracefully."""
-        if self.thread.isRunning():
-            logger.info("Requesting VoiceSynthesizer thread stop...")
+        """Para a síntese de voz e limpa recursos."""
+        logger.info("Requesting VoiceSynthesizer thread stop...")
+        self._running = False
+        self._stop_requested = True
+        
+        # Para o worker se existir
+        if hasattr(self, 'worker') and self.worker:
             self.worker.stop()
+        
+        # Aguarda um pouco para a thread terminar naturalmente
+        if hasattr(self, 'thread') and self.thread and self.thread.isRunning():
             self.thread.quit()
-            self.thread.wait(2000) # Wait max 2 seconds for thread to finish
-            if self.thread.isRunning():
-                logger.warning("VoiceSynthesizer thread did not stop gracefully. Terminating.")
+            if not self.thread.wait(1000):  # Aguarda até 1 segundo
+                logger.warning("VoiceSynthesizer thread não terminou em tempo hábil")
                 self.thread.terminate()
-            else:
-                logger.info("VoiceSynthesizer thread stopped.")
-        else:
-             logger.info("VoiceSynthesizer thread already stopped.")
+                self.thread.wait(1000)  # Aguarda mais um pouco
+        
+        # Limpa a engine
+        if hasattr(self, 'engine') and self.engine:
+            try:
+                self.engine.stop()
+            except Exception as e:
+                logger.warning(f"Erro ao parar engine TTS: {e}")
+        
+        logger.info("VoiceSynthesizer stopped.")
 
     def __del__(self):
-        # Ensure thread is stopped on deletion
-        self.stop()
+        """Destrutor para garantir limpeza adequada."""
+        try:
+            self.stop()
+        except:
+            pass  # Ignora erros no destrutor
 
 # Example Usage (for testing within this module)
 if __name__ == "__main__":
